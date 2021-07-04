@@ -167,8 +167,8 @@ class EventInferenceSystem:
             # during testing the event probabilities are inferred
             p_ei = self.inference(o_t=o_t, pi_t=pi_t)
             # compute for every policy expected free energy
-            expected_fe = np.zeros(3, dtype=np.float64)
-            pis = np.identity(3, dtype=np.float64)
+            expected_fe = np.zeros(self.num_policies, dtype=np.float64)
+            pis = np.identity(self.num_policies, dtype=np.float64)
             for p in range(self.num_policies):
                 one_hot_pi = pis[p, :]
                 expected_fe[p] = self.estimate_fe_for_policy(pi=one_hot_pi, tau=tau)
@@ -280,6 +280,33 @@ class EventInferenceSystem:
             self.policy_trajectory.append(pi_t)
             self.o_t_minus_1 = o_t
 
+    def update_batch(self, inp_tensor, target_tensor, e_i, component):
+        """
+        Updates the subnetworks based on batches of inputs and targets
+        :param inp_tensor: Two-dimensional tensor of inputs (first dim = batch size)
+        :param target_tensor: Two-dimensional tensor of nominal outputs (first dim = batch size)
+        :param e_i: which event to update
+        :param component: which component of the event 'start', 'dynamics', or 'end
+        """
+
+        if component == 'start':
+            subnetwork = self.P_start_networks[e_i]
+            optimizer = self.P_start_optimizers[e_i]
+        elif component == 'dynamics':
+            subnetwork = self.P_ei_networks[e_i]
+            optimizer = self.P_ei_optimizers[e_i]
+        else:
+            assert component == 'end'
+            subnetwork = self.P_end_networks[e_i]
+            optimizer = self.P_end_optimizers[e_i]
+
+        optimizer.zero_grad()
+        out_tensor = subnetwork.forward(inp_tensor)
+        loss = subnetwork.batch_loss_criterion(out_tensor, target_tensor)
+        loss.backward()
+        optimizer.step()
+        return loss.detach().item()
+
     def _update_start(self, o_t, pi_t, e_i):
         """
         Update P^{start}_{e_i} (o(t)|pi(t))
@@ -378,13 +405,13 @@ class EventInferenceSystem:
                 start_ei[i] = self._compute_gauss_pdf(o_t, mu_start, sigma_start)
             sum_eis = np.sum(start_ei * self.P_ei)
             # Normalize probability in case of floatation errors
-            P_ei_prime = self.P_ei * (start_ei * 1.0/sum_eis)
+            P_ei_tplus1 = self.P_ei * (start_ei * 1.0/sum_eis)
             
             # Store observation and event estimation
             self.o_t_minus_1 = o_t
-            self.P_ei = P_ei_prime
+            self.P_ei = P_ei_tplus1
 
-            return P_ei_prime
+            return P_ei_tplus1
 
         # 2. case: Ongoing event sequence
         assert not (self.o_t_minus_1 is None)
@@ -429,21 +456,21 @@ class EventInferenceSystem:
 
         # use likelihoods to update inferred event probabilities
         # P(e_i(t)| O(t), Pi(t))
-        P_ei_prime = np.zeros(self.num_models, dtype=np.float64)
+        P_ei_tplus1 = np.zeros(self.num_models, dtype=np.float64)
         for i in range(self.num_models):
             for j in range(self.num_models):
                 if np.sum(P_posterior[:, j]) != 0:
-                    P_ei_prime[i] = P_ei_prime[i] + (P_posterior[i][j]/np.sum(P_posterior[:, j])) * self.P_ei[j]
+                    P_ei_tplus1[i] = P_ei_tplus1[i] + (P_posterior[i][j]/np.sum(P_posterior[:, j])) * self.P_ei[j]
 
         # Normalize P(e_i(t) | O(t), Pi(t)) = P(e_i(t)| O(t), Pi(t))/( sum_{e_j}P(e_j(t) | O(t), Pi(t)))
         # Typically not necessary but sometimes required because of slight approximation errors
-        P_ei_prime /= np.sum(P_ei_prime)
+        P_ei_tplus1 /= np.sum(P_ei_tplus1)
 
         # Store observation and event estimation
         self.o_t_minus_1 = o_t
-        self.P_ei = P_ei_prime
+        self.P_ei = P_ei_tplus1
 
-        return P_ei_prime
+        return P_ei_tplus1
 
     def get_event_probabilities(self):
         """
@@ -617,3 +644,72 @@ class EventInferenceSystem:
         self.P_ei = np.ones(self.num_models) * (1.0/self.num_models)
         self.current_event = -1
         self.o_t_minus_1 = None
+
+    # ------------- OFFLINE DATA COLLECTION  -------------
+    def get_offline_data(self, o_t, pi_t, e_i, done):
+        """
+        Simulates update step without supervised training.
+        A helper to create data for offline training
+        :param o_t: current observation o(t)
+        :param pi_t: last policy pi(t-1)
+        :param e_i: supervised label for current event e(t)
+        :param done: flag if event sequence ends after this sample
+        :return: 4-tuple with
+            - Which component does the current observation belong to: 'start', 'dynamics', or 'end'
+            - Event number
+            - List of inputs
+            - List of target outputs
+        """
+
+        if self.o_t_minus_1 is None:
+            assert self.current_event == -1
+
+            # store observations and policies in trajectory of the current event
+            self.o_t_minus_1 = o_t
+            self.current_event = e_i
+            self.observation_trajectory.append(np.copy(o_t))
+            self.policy_trajectory.append(np.copy(pi_t))
+            return "start", e_i, [pi_t], [o_t]
+
+        elif self.current_event != e_i or done:
+
+            inp_traj, target_traj = self._get_end_trajectory(o_t)
+            last_event = self.current_event
+
+            # Clear the trajectory memory
+            self.policy_trajectory.clear()
+            self.observation_trajectory.clear()
+
+            # Reset observation and event knowledge
+            self.o_t_minus_1 = None
+            self.current_event = -1
+
+            return "end", last_event, inp_traj, target_traj
+        else:
+            assert self.current_event == e_i
+
+            last_obs = self.o_t_minus_1
+            # store observations and policies in trajectory of the current event
+            self.observation_trajectory.append(np.copy(o_t))
+            self.policy_trajectory.append(np.copy(pi_t))
+            self.o_t_minus_1 = o_t
+            return "dynamics", e_i, [np.append(last_obs, pi_t)], [o_t]
+
+
+    def _get_end_trajectory(self, o_t):
+        """
+        Helper for offline data creation. Collects training data for event end
+        :param o_t: current observation o(t)
+        :return: list of inputs and list of target observation
+        """
+        length = len(self.observation_trajectory)
+        assert length == len(self.policy_trajectory)
+        input_list = []
+        target_list = []
+        for i in range(length):
+            o_i = self.observation_trajectory[i]
+            pi_i = self.policy_trajectory[i]
+            input_i = np.append(o_i, pi_i)
+            input_list.append(input_i)
+            target_list.append(np.copy(o_t))
+        return input_list, target_list

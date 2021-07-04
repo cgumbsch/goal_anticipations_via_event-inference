@@ -46,13 +46,28 @@ class Multivariate_Gaussian_Network(nn.Module):
         sigma = F.elu(self.fcSigma(x)) + 1.00000000001
         return mu, sigma
 
-    def get_optimizer(self, learning_rate, momentum_term):
+    def get_optimizer(self, learning_rate, momentum_term=0.0, type='SGD'):
         """
-        :param learning_rate: learning rate of SGD
-        :param momentum_term: momentum term used for SGD
+        :param learning_rate: learning rate of optimizer
+        :param momentum_term: momentum term used of optimizer
+        :param type: which optimizer to use, 'SGD' or 'Adam'
         :return: optimizer of the network
         """
+        if type == 'Adam':
+            return optim.Adam(self.parameters(), lr=learning_rate, eps=1e-04)
         return optim.SGD(self.parameters(), lr=learning_rate, momentum=momentum_term)
+
+    def batch_loss_criterion(self, output, label):
+        """
+        Loss function applied for batched outputs
+        :param output: output (mu, Sigma) of the network, each is a batch
+        :param label: batch of target outputs
+        :return: negative log likelihood of nominal label under output distribution
+        """
+        mu = output[0]
+        sigma = torch.diag_embed(output[1], offset=0, dim1=-2, dim2=-1)
+        distr = torch.distributions.MultivariateNormal(mu, sigma)
+        return torch.mean(torch.tanh(-1 * distr.log_prob(label) * (1.0 / 100)) * 100)
 
     def loss_criterion(self, output, label):
         """
