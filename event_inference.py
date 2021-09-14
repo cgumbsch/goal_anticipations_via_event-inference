@@ -490,6 +490,113 @@ class CAPRI:
         var = multivariate_normal(mean=mu, cov=sigma, allow_singular=True)
         return var.pdf(x)
 
+    def inference_gradients(self, o_t, o_t_minus_1, pi_t, P_e_i_t, gradient_flow='all'):
+        """
+        Infer the probabilities of events in the absence of
+        explicit labels. Use only pytorch functions to allow gradient flow
+        :param o_t: current observation o(t)
+        :param o_t_minus_1: last observation o(t-1)
+        :param pi_t: last policy pi(t-1)
+        :param P_e_i_t: last event probability (tensor)
+        :param gradient_flow: through which components is the gradient allowed to flow:
+            - 'all' = through all components
+            - 'no_recurrence' = gradient flow only through one time step
+        :return: Tensor of next probabilities P(e_i(t)|O(t), Pi(t)) for all e_i
+        """
+
+        if gradient_flow == 'no_recurrence' and P_e_i_t is not None:
+            P_e_i_t = P_e_i_t.detach()
+
+        # 1. case: New event sequence or trial is starting
+        if o_t_minus_1 is None:
+            assert self.current_event == -1
+
+            if P_e_i_t is None:
+                P_e_i_t = torch.ones(self.num_models).float()
+
+            start_ei = torch.ones(self.num_models).float()
+
+            # P(e_i | O(1), Pi(1)) = P^{start}_{e_i}(o(1)|pi(1))/( sum_{e_j}(P^{start}_{e_j}(o(1)|pi(1)))
+            for i in range(self.num_models):
+                x_pi = torch.from_numpy(pi_t)
+                mu_start, sigma_start = self.P_start_networks[i].forward(x_pi)
+                start_ei[i] *= self._compute_gauss_pdf_gradients(torch.from_numpy(o_t), mu_start, sigma_start)
+            sum_eis = torch.sum(start_ei * P_e_i_t)
+            # Normalize probability in case of floatation errors
+            P_ei_tplus1 = P_e_i_t * (start_ei * 1.0 / sum_eis)
+
+            # Store observation and event estimation
+            self.o_t_minus_1 = o_t
+            self.P_ei = P_ei_tplus1.detach().numpy()
+            return P_ei_tplus1
+
+        # 2. case: Ongoing event sequence
+        assert not (o_t_minus_1 is None)
+        P_posterior = torch.zeros((self.num_models, self.num_models), dtype=np.float64)
+
+        # Determine P(o(t) | o(t-1), pi(t-1), e_i(t), e_j(t)) for all i x j possible combinations
+        for i in range(self.num_models):
+            for j in range(self.num_models):
+                if i == j:
+                    # use P^{event}_{e_i} to estimate the likelihood
+                    input = np.append(o_t_minus_1, pi_t)
+                    x = torch.from_numpy(input)
+                    mu, sigma = self.P_ei_networks[i].forward(x)
+                    # likelihoods of staying in the same event
+                    P_posterior[i][j] = self.no_transition_prior * \
+                                        self._compute_gauss_pdf_gradients(torch.from_numpy(o_t), mu, sigma)
+                else:
+                    assert i != j
+                    # e_j ended and e_i is starting now
+                    # use P^{end}_{e_j} and P^{start}_{e_i} to estimate the likelihood
+
+                    # P^{end}_{e_j}:
+                    input = np.append(o_t_minus_1, pi_t)
+                    x = torch.from_numpy(input)
+                    mu_end, sigma_end = self.P_end_networks[j].forward(x)
+                    P_j_end = self._compute_gauss_pdf_gradients(torch.from_numpy(o_t), mu_end, sigma_end)
+
+                    # P^{start}_{e_i}:
+                    x_pi = torch.from_numpy(pi_t)
+                    mu_start, sigma_start = self.P_start_networks[i].forward(x_pi)
+                    P_i_start = self._compute_gauss_pdf_gradients(o_t, mu_start, sigma_start)
+
+                    # Likelihood for a transition, P(o(t) | e_i(t), e_j(t-1), o(t-1), pi(t-1)) =
+                    # P(e_i | e_j) * P^{start}_{e_i}(o(t)| pi(t-1)) * P^{end}(o(t)| o(t-1), pi(t-1))
+                    transition_prior = (1.0 - self.no_transition_prior) / (self.num_models - 1.0)
+                    P_posterior[i][j] = transition_prior * P_i_start * P_j_end
+
+        # use likelihoods to update inferred event probabilities
+        # P(e_i(t)| O(t), Pi(t))
+        P_ei_tplus1 = torch.zeros(self.num_models, dtype=np.float64)
+        for i in range(self.num_models):
+            for j in range(self.num_models):
+                if torch.sum(P_posterior[:, j]) > 0:
+                    P_ei_tplus1[i] += (P_posterior[i][j] / torch.sum(P_posterior[:, j])) * P_e_i_t[j]
+
+        # Normalize P(e_i(t) | O(t), Pi(t)) = P(e_i(t)| O(t), Pi(t))/( sum_{e_j}P(e_j(t) | O(t), Pi(t)))
+        # Typically not necessary but sometimes required because of slight approximation errors
+        P_ei_tplus1 /= torch.sum(P_ei_tplus1)
+
+        # Store observation and event estimation
+        self.o_t_minus_1 = o_t
+        self.P_ei = P_ei_tplus1.detach().numpy()
+
+        return P_ei_tplus1
+
+    @staticmethod
+    def _compute_gauss_pdf_gradients(x, mu, sigma):
+        """
+        Compute likelihood of Gaussian distribution using only differentiable pytorch functions
+        :param x: variable (tensor)
+        :param mu: mean (tensor)
+        :param sigma: vector of variances (tensor)
+        :return: N(x)(mu, Sigma)
+        """
+        sigma_matrix = torch.diag(sigma)
+        distr = torch.distributions.MultivariateNormal(mu, sigma_matrix)
+        return distr.log_prob(x).exp()
+
     # ------------- ACTIVE INFERENCE -------------
     def estimate_fe_for_policy(self, pi, tau):
         """
