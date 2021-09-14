@@ -14,7 +14,7 @@ The system can also infer desired policies. In this implementation the system in
 the aim to minimize predicted uncertainty about future events and event boundaries. We use this to
 model the goal-predictive gaze in infants.
 
-For more information, see our paper: Emergence of Goal-Anticipations in Infants - A Computational Modeling Approach
+For more information, see our paper: Emergent Goal-Anticipatory Gaze in Infants via Event-Predictive Learning and Inference
 (2020), C. Gumbsch, M. Adam, B. Elsner, & M.V. Butz
 """
 
@@ -31,7 +31,7 @@ from sampling_buffer import SamplingBuffer
 import random
 
 
-class EventInferenceSystem:
+class CAPRI:
     
     # ------------- INITIALIZATION OF EVENT-PREDICTIVE INFERENCE SYSTEM -------------
     def __init__(self, epsilon_start, epsilon_dynamics, epsilon_end, no_transition_prior,
