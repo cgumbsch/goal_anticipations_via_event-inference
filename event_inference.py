@@ -1,7 +1,7 @@
 """
-Event-predictive inference system
+Cognitive Action PRediction in Infants system (CAPRI)
 
-This system learns probabilistic event schemata for observed sensorimotor interactions.
+CAPRI learns probabilistic event schemata for observed sensorimotor interactions.
 Each schemata has a particular structure:
 - It has a starting condition encoding where in the space of observation this event typically starts
 - It has an event dynamics model, encoding how sensory information changes during the event
@@ -10,7 +10,7 @@ Each schemata has a particular structure:
 During training these event schemata are learned using supervised training. During testing, the
 event schemata is inferred based on new observations and likelihoods produced by the event schemata.
 
-The system can also infer desired policies. In this implementation the system infers its policy with
+CAPRI can also infer desired policies. In this implementation the system infers its policy with
 the aim to minimize predicted uncertainty about future events and event boundaries. We use this to
 model the goal-predictive gaze in infants.
 
@@ -808,7 +808,8 @@ class CAPRI:
 
             self.P_start_buffer[i].load(buffer_dir, 'start_' + str(i), index=checkpoint['start_buffer_index'])
             self.P_ei_buffer[i].load(buffer_dir, 'event_' + str(i), index=checkpoint['event_buffer_index'])
-            self.P_end_buffer[i].load(buffer_dir, 'end_' + str(i), index=checkpoint['end_buffer_index']
+            self.P_end_buffer[i].load(buffer_dir, 'end_' + str(i), index=checkpoint['end_buffer_index'])
+
 
     # ------------- OFFLINE DATA COLLECTION  -------------
     def get_offline_data(self, o_t, pi_t, e_i, done):
