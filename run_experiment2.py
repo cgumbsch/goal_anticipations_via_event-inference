@@ -1,8 +1,6 @@
-import gym
 import interaction_gym
 import numpy as np
 import event_inference as event
-import sys
 import random
 
 

@@ -2,8 +2,7 @@
 Sampling buffer for storing previous (input, output)-samples and
 drawing from these samples for additional training data
 """
-import numpy
-import math
+import numpy as np
 import random
 
 
@@ -18,8 +17,8 @@ class SamplingBuffer:
         """
         self.input_dim = input_dim
         self.buffer_size = buffer_size
-        self.input_buffer = numpy.zeros((buffer_size, input_dim), dtype=numpy.float64)
-        self.output_buffer = numpy.zeros((buffer_size, output_dim), dtype=numpy.float64)
+        self.input_buffer = np.zeros((buffer_size, input_dim), dtype=np.float64)
+        self.output_buffer = np.zeros((buffer_size, output_dim), dtype=np.float64)
         self.index = 0
         random.seed(seed)
 
@@ -51,3 +50,19 @@ class SamplingBuffer:
         else:
             index = random.randint(0, self.buffer_size-1)
             return self.input_buffer[index, :], self.output_buffer[index, :]
+
+    def get_index(self):
+        return self.index
+
+    def set_index(self, index):
+        self.index = index
+
+    def save(self, dir_name, buffer_name):
+        np.save(dir_name + buffer_name + '_inputs', self.input_buffer)
+        np.save(dir_name + buffer_name + '_outputs', self.output_buffer)
+
+    def load(self, dir_name, buffer_name, index=-1):
+        self.input_buffer = np.load(dir_name + buffer_name + '_inputs.npy')
+        self.output_buffer = np.load(dir_name + buffer_name + '_outputs.npy')
+        if index >= 0:
+            self.index = index

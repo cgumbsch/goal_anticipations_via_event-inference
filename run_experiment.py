@@ -1,10 +1,8 @@
-import gym
 import interaction_gym
 import numpy as np
 import event_inference as event
-import sys
 import random
-
+import os
 
 def test_run(directory_name, setting_name, event_system, interaction_env,
              claw, simulation_num, epoch_num, run_num, time_horizon,
@@ -58,6 +56,7 @@ random_Colors = True
 percentage_reaching = 1.0/3.0
 folder_name = 'Experiments/ResAblationTimeHorizon'
 
+
 # EXPERIMENT 1, 2, and 3:
 # tau = 2, 1.0/3.0 E_grasp events in training, randomized agent appearance
 tau = 2
@@ -65,12 +64,16 @@ test_name = 'res_tau_2_sim'
 
 for simulation in range(20):
     seed = simulation
-    model = event.CAPRI(epsilon_start=epsilon_start, epsilon_dynamics=epsilon_dynamics,
-                        epsilon_end=epsilon_end, no_transition_prior=0.9, dim_observation=18,
-                        num_policies=3, num_models=4, r_seed=seed, sampling_rate=2)
+    model = event.EventInferenceSystem(epsilon_start=epsilon_start, epsilon_dynamics=epsilon_dynamics,
+                                       epsilon_end=epsilon_end, no_transition_prior=0.9, dim_observation=18,
+                                       num_policies=3, num_models=4, r_seed=seed, sampling_rate=2)
     env = interaction_gym.InteractionEventGym(sensory_noise_base=1.0, sensory_noise_focus=0.01,
                                               r_seed=seed, randomize_colors=random_Colors,
                                               percentage_reaching=percentage_reaching)
+
+    log_file_name = folder_name + '/' + test_name + str(simulation) + '/log_files/'
+    os.makedirs(log_file_name, exist_ok=True)
+
     for epoch in range(30):
         # TRAINING PHASE:
         # do 100 training event sequences per phase
@@ -91,26 +94,28 @@ for simulation in range(20):
         # do 10 test phases for hand and claw agents
         for run in range(10):
             # hand:
-            test_run(directory_name=folder_name, setting_name=test_name, event_system=model,
+            test_run(directory_name=log_file_name, setting_name=test_name, event_system=model,
                      interaction_env=env, claw=False, simulation_num=simulation,
                      epoch_num=epoch, run_num=run, time_horizon=tau)
             # claw:
-            test_run(directory_name=folder_name, setting_name=test_name, event_system=model,
+            test_run(directory_name=log_file_name, setting_name=test_name, event_system=model,
                      interaction_env=env, claw=True, simulation_num=simulation,
                      epoch_num=epoch, run_num=run, time_horizon=tau)
+        model.save(folder_name + '/' + test_name + str(simulation), epoch)
 
-    # EXPERIMENT 4:
+    # EXPERIMENT 3:
     # after fully training the system on tau = 2 and 30 epochs, test how behavior is altered if
     # appearance of agent gets systematically more noise
-    sd_values = np.array([0.1, 0.5, 1.0, 5.0])  # possible noise values
+    sd_values = np.array([0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0])  # possible noise values
     for s in sd_values:
         noise_per_dimension = np.zeros(18, dtype=np.float64)
         noise_per_dimension[3] = s  # agent's appearance receives extra noise
         extra_file_name = '_' + str(s)
         for run in range(10):
             # hand:
-            env.set_other_noise(np.random.normal(0.0, 1.0, 18) * noise_per_dimension)
-            test_run(directory_name=folder_name, setting_name=test_name, event_system=model,
+            added_noise = np.random.normal(0.0, 1.0, 18) * noise_per_dimension
+            env.add_other_noise(added_noise)
+            test_run(directory_name=log_file_name, setting_name=test_name, event_system=model,
                      interaction_env=env, claw=False, simulation_num=simulation,
                      epoch_num=30, run_num=run, time_horizon=tau, file_name_addition=extra_file_name)
 
@@ -120,12 +125,14 @@ tau = 1
 test_name = 'res_tau_1_sim'
 for simulation in range(20):
     seed = simulation
-    model = event.CAPRI(epsilon_start=epsilon_start, epsilon_dynamics=epsilon_dynamics,
-                        epsilon_end=epsilon_end, no_transition_prior=0.9, dim_observation=18,
-                        num_policies=3, num_models=4, r_seed=seed, sampling_rate=2)
+    model = event.EventInferenceSystem(epsilon_start=epsilon_start, epsilon_dynamics=epsilon_dynamics,
+                                       epsilon_end=epsilon_end, no_transition_prior=0.9, dim_observation=18,
+                                       num_policies=3, num_models=4, r_seed=seed, sampling_rate=2)
     env = interaction_gym.InteractionEventGym(sensory_noise_base=1.0, sensory_noise_focus=0.01,
                                               r_seed=seed, randomize_colors=random_Colors,
                                               percentage_reaching=percentage_reaching)
+    log_file_name = folder_name + '/' + test_name + str(simulation) + '/log_files/'
+    os.makedirs(log_file_name, exist_ok=True)
     for epoch in range(30):
         # TRAINING PHASE:
         # do 100 training event sequences per phase
@@ -146,13 +153,14 @@ for simulation in range(20):
         # do 10 test phases for hand and claw agents
         for run in range(10):
             # hand:
-            test_run(directory_name=folder_name, setting_name=test_name, event_system=model,
+            test_run(directory_name=log_file_name, setting_name=test_name, event_system=model,
                      interaction_env=env, claw=False, simulation_num=simulation,
                      epoch_num=epoch, run_num=run, time_horizon=tau)
             # claw:
-            test_run(directory_name=folder_name, setting_name=test_name, event_system=model,
+            test_run(directory_name=log_file_name, setting_name=test_name, event_system=model,
                      interaction_env=env, claw=True, simulation_num=simulation,
                      epoch_num=epoch, run_num=run, time_horizon=tau)
+        model.save(folder_name + '/' + test_name + str(simulation), epoch)
 
 
 # tau = 3, 1.0/3.0 E_grasp events in training, randomized agent appearance
@@ -160,12 +168,14 @@ tau = 3
 test_name = 'res_tau_3_sim'
 for simulation in range(20):
     seed = simulation
-    model = event.CAPRI(epsilon_start=epsilon_start, epsilon_dynamics=epsilon_dynamics,
-                        epsilon_end=epsilon_end, no_transition_prior=0.9, dim_observation=18,
-                        num_policies=3, num_models=4, r_seed=seed, sampling_rate=2)
+    model = event.EventInferenceSystem(epsilon_start=epsilon_start, epsilon_dynamics=epsilon_dynamics,
+                                       epsilon_end=epsilon_end, no_transition_prior=0.9, dim_observation=18,
+                                       num_policies=3, num_models=4, r_seed=seed, sampling_rate=2)
     env = interaction_gym.InteractionEventGym(sensory_noise_base=1.0, sensory_noise_focus=0.01,
                                               r_seed=seed, randomize_colors=random_Colors,
                                               percentage_reaching=percentage_reaching)
+    log_file_name = folder_name + '/' + test_name + str(simulation) + '/log_files/'
+    os.makedirs(log_file_name, exist_ok=True)
     for epoch in range(30):
         # TRAINING PHASE:
         # do 100 training event sequences per phase
@@ -186,10 +196,11 @@ for simulation in range(20):
         # do 10 test phases for hand and claw agents
         for run in range(10):
             # hand:
-            test_run(directory_name=folder_name, setting_name=test_name, event_system=model,
+            test_run(directory_name=log_file_name, setting_name=test_name, event_system=model,
                      interaction_env=env, claw=False, simulation_num=simulation,
                      epoch_num=epoch, run_num=run, time_horizon=tau)
             # claw:
-            test_run(directory_name=folder_name, setting_name=test_name, event_system=model,
+            test_run(directory_name=log_file_name, setting_name=test_name, event_system=model,
                      interaction_env=env, claw=True, simulation_num=simulation,
                      epoch_num=epoch, run_num=run, time_horizon=tau)
+        model.save(folder_name + '/' + test_name + str(simulation), epoch)

@@ -15,28 +15,24 @@ the aim to minimize predicted uncertainty about future events and event boundari
 model the goal-predictive gaze in infants.
 
 For more information, see our paper: Emergent Goal-Anticipatory Gaze in Infants via Event-Predictive Learning and Inference
-(2020), C. Gumbsch, M. Adam, B. Elsner, & M.V. Butz
+(2021), C. Gumbsch, M. Adam, B. Elsner, & M.V. Butz
 """
 
 import numpy as np
-import random
 import gaussian_networks as gn
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import math
 import torch.optim as optim
 from scipy.stats import multivariate_normal
 from sampling_buffer import SamplingBuffer
 import random
-
+import os
 
 class CAPRI:
     
     # ------------- INITIALIZATION OF EVENT-PREDICTIVE INFERENCE SYSTEM -------------
     def __init__(self, epsilon_start, epsilon_dynamics, epsilon_end, no_transition_prior,
                  dim_observation, num_policies, num_models, r_seed,
-                 sampling_rate=5, buffer_capacity=1000):
+                 sampling_rate=5, buffer_capacity=1000, optimizer='SGD', tanh_loss=True):
         """
         Initializes the class
         :param epsilon_start: learning rate of start condition networks
@@ -50,6 +46,8 @@ class CAPRI:
         :param r_seed: random seed
         :param sampling_rate: sampling rate of the replay buffer
         :param buffer_capacity: capacity of the replay buffer
+        :param optimizer: which optimizer to use
+        :param tanh_loss: tanh on NLL loss
         """
 
         # Set the dimensionality of observations, policies and models
@@ -110,7 +108,7 @@ class CAPRI:
             self.P_ei_networks[i] = gn.Multivariate_Gaussian_Network(dim_observation + num_policies,
                                                                      dim_observation).double()
             self.P_ei_optimizers[i] = self.P_ei_networks[i].get_optimizer(learning_rate=epsilon_dynamics,
-                                                                          momentum_term=0.0)
+                                                                          momentum_term=0.0, type=optimizer)
             buffer_seed = random.randint(-1000, 1000)  # Sample a random seed for the sampling buffer
             self.P_ei_buffer[i] = SamplingBuffer(dim_observation + num_policies, dim_observation,
                                                  buffer_capacity, buffer_seed)
@@ -139,6 +137,9 @@ class CAPRI:
         self.P_ei = np.ones(self.num_models, dtype=np.float64)
         # At the start of inference every event is equally likely
         self.P_ei = self.P_ei * (1.0/self.num_models)
+
+        self.tanh_loss = tanh_loss
+        self.pinv_matrix = True
 
     # ------------- MAIN STEP OF THE SYSTEM -------------
     def step(self, o_t, pi_t, training, done, e_i=-1, tau=2):
@@ -302,7 +303,7 @@ class CAPRI:
 
         optimizer.zero_grad()
         out_tensor = subnetwork.forward(inp_tensor)
-        loss = subnetwork.batch_loss_criterion(out_tensor, target_tensor)
+        loss = subnetwork.batch_loss_criterion(out_tensor, target_tensor, tanh=self.tanh_loss)
         loss.backward()
         optimizer.step()
         return loss.detach().item()
@@ -318,7 +319,7 @@ class CAPRI:
         y = torch.from_numpy(o_t)
         self.P_start_optimizers[e_i].zero_grad()
         output = self.P_start_networks[e_i].forward(x)
-        loss = self.P_start_networks[e_i].loss_criterion(output, y)
+        loss = self.P_start_networks[e_i].loss_criterion(output, y, tanh=self.tanh_loss)
         loss.backward()
         self.P_start_optimizers[e_i].step()
 
@@ -333,7 +334,7 @@ class CAPRI:
         y = torch.from_numpy(o_t)
         self.P_ei_optimizers[e_i].zero_grad()
         output = self.P_ei_networks[e_i].forward(x)
-        loss = self.P_ei_networks[e_i].loss_criterion(output, y)
+        loss = self.P_ei_networks[e_i].loss_criterion(output, y, tanh=self.tanh_loss)
         loss.backward()
         self.P_ei_optimizers[e_i].step()
 
@@ -348,7 +349,7 @@ class CAPRI:
         y = torch.from_numpy(o_t)
         self.P_end_optimizers[e_i].zero_grad()
         output = self.P_end_networks[e_i].forward(x)
-        loss = self.P_end_networks[e_i].loss_criterion(output, y)
+        loss = self.P_end_networks[e_i].loss_criterion(output, y, tanh=self.tanh_loss)
         loss.backward()
         self.P_end_optimizers[e_i].step()
 
@@ -406,7 +407,7 @@ class CAPRI:
             sum_eis = np.sum(start_ei * self.P_ei)
             # Normalize probability in case of floatation errors
             P_ei_tplus1 = self.P_ei * (start_ei * 1.0/sum_eis)
-            
+
             # Store observation and event estimation
             self.o_t_minus_1 = o_t
             self.P_ei = P_ei_tplus1
@@ -654,15 +655,15 @@ class CAPRI:
             x_end = torch.from_numpy(input)
             output_end = self.P_end_networks[i].forward(x_end)
             mu_end = output_end[0].detach().numpy()
-            sigma_end = torch.diag(output_end[1]).detach().numpy()
+            sigma_end = output_end[1].detach().numpy()
             for j in range(self.num_models):
                 # Compute the start distributions for event e_j
                 x_start = torch.from_numpy(pi_t)
                 output_start = self.P_start_networks[j].forward(x_start)
                 mu_start = output_start[0].detach().numpy()
-                sigma_start = torch.diag(output_start[1]).detach().numpy()
+                sigma_start = output_start[1].detach().numpy()
                 # Compute the product of the Gaussian distributions
-                mu_3, sigma_3 = self._product_of_gaussians(mu_start, sigma_start, mu_end, sigma_end)
+                mu_3, sigma_3 = self._product_of_gaussians(mu_start, sigma_start, mu_end, sigma_end, self.pinv_matrix)
                 # Compute the entropy of the resulting distribution
                 entropy_ij = self._compute_gauss_entropy(mu_3, sigma_3)
                 entropy[i] += entropy_ij
@@ -684,13 +685,13 @@ class CAPRI:
             x_end = torch.from_numpy(input)
             output_end = self.P_end_networks[i].forward(x_end)
             mu_end = output_end[0].detach().numpy()
-            sigma_end = torch.diag(output_end[1]).detach().numpy()
+            sigma_end = output_end[1].detach().numpy()
             for j in range(self.num_models):
                 # Compute the start distributions for event e_j
                 x_start = torch.from_numpy(pi_t)
                 output_start = self.P_start_networks[j].forward(x_start)
                 mu_start = output_start[0].detach().numpy()
-                sigma_start = torch.diag(output_start[1]).detach().numpy()
+                sigma_start = output_start[1].detach().numpy()
 
                 # Compute the end distribution for event e_j based on the expected
                 # start observation distribution of e_j
@@ -698,21 +699,21 @@ class CAPRI:
                 x_start_end = torch.from_numpy(input_start_end)
                 output_start_end = self.P_end_networks[j].forward(x_start_end)
                 mu_start_end = output_start_end[0].detach().numpy()
-                sigma_start_end = torch.diag(output_start_end[1]).detach().numpy()
+                sigma_start_end = output_start_end[1].detach().numpy()
 
                 for k in range(self.num_models):
                     # Compute the start distribution for e_k
                     output_start_end_start = self.P_start_networks[k].forward(x_start)
                     mu_start_end_start = output_start_end_start[0].detach().numpy()
-                    sigma_start_end_start = torch.diag(output_start_end_start[1]).detach().numpy()
+                    sigma_start_end_start = output_start_end_start[1].detach().numpy()
 
                     # Compute products of all 4 Gaussian distributions:
                     # 1. Boundary from ending e_i to starting e_j
-                    mu_3, sigma_3 = self._product_of_gaussians(mu_start, sigma_start, mu_end, sigma_end)
+                    mu_3, sigma_3 = self._product_of_gaussians(mu_start, sigma_start, mu_end, sigma_end, self.pinv_matrix)
                     # 2. Boundary from starting e_j to ending e_j
-                    mu_4, sigma_4 = self._product_of_gaussians(mu_start_end, sigma_start_end, mu_3, sigma_3)
+                    mu_4, sigma_4 = self._product_of_gaussians(mu_start_end, sigma_start_end, mu_3, np.diag(sigma_3), self.pinv_matrix)
                     # 3. Boundary from ending e_j to starting e_k
-                    mu_5, sigma_5 = self._product_of_gaussians(mu_start_end_start, sigma_start_end_start, mu_4, sigma_4)
+                    mu_5, sigma_5 = self._product_of_gaussians(mu_start_end_start, sigma_start_end_start, mu_4, np.diag(sigma_4), self.pinv_matrix)
                     entropy_ijk = self._compute_gauss_entropy(mu_5, sigma_5)
                     entropy[i] += entropy_ijk
 
@@ -730,27 +731,84 @@ class CAPRI:
         return var.entropy()
 
     @staticmethod
-    def _product_of_gaussians(mu_1, sigma_1, mu_2, sigma_2):
+    def _product_of_gaussians(mu_1, sigma_1, mu_2, sigma_2, pinv_matrix):
         """
         Computes the product of two Gaussian distributions
         :param mu_1: mean of first Gaussian
-        :param sigma_1: covariance matrix of first Gaussian
+        :param sigma_1: vector of variances of first Gaussian
         :param mu_2: mean of second Gaussian
-        :param sigma_2: covariance matrix of second Gaussian
+        :param sigma_2: vector of variances of second Gaussian
+        :param pinv_matrix: compute pseudo inverse or simple inverse of diagonal cov-matrix
         :return: mean and covariance matrix of resulting Gaussian
         """
-        sum_sigma_inv = np.linalg.pinv(sigma_1 + sigma_2)
+
+        if pinv_matrix:
+            # General case for full covariance matrix
+            sum_sigma_inv = np.linalg.pinv(np.diag(sigma_1) + np.diag(sigma_2))
+        else:
+            # Sufficient for diagonal matrices and faster to compute:
+            sum_sigma_inv = np.diag(1.0/(sigma_1 + sigma_2))
         sigma_3 = np.matmul(np.matmul(sigma_1, sum_sigma_inv), sigma_2)
         mu_1_factor = np.matmul(sigma_2, np.matmul(sum_sigma_inv, mu_1))
         mu_2_factor = np.matmul(sigma_1, np.matmul(sum_sigma_inv, mu_2))
         mu_3 = mu_1_factor + mu_2_factor
         return mu_3, sigma_3
 
-    # ------------- RESETTING THE SYSTEM -------------
+    # ------------- RESETTING OR SAVING THE SYSTEM -------------
     def reset(self):
         self.P_ei = np.ones(self.num_models) * (1.0/self.num_models)
         self.current_event = -1
         self.o_t_minus_1 = None
+
+    def save(self, directory, epoch=-1):
+        """
+        Save the whole system
+        :param directory: target directory to save
+        :param epoch: number of current epoch
+        """
+        dir_name = directory + '/checkpoint_' + str(epoch) + '/'
+        buffer_dir = dir_name + 'buffers/'
+        os.makedirs(dir_name, exist_ok=True)
+        os.makedirs(buffer_dir, exist_ok=True)
+        for i in range(self.num_models):
+            dir_name_i = dir_name + 'net_' + str(i)
+            torch.save({
+                'start_net': self.P_start_networks[i].state_dict(),
+                'start_opt': self.P_start_optimizers[i].state_dict(),
+                'start_buffer_index': self.P_start_buffer[i].get_index(),
+                'event_net': self.P_ei_networks[i].state_dict(),
+                'event_opt': self.P_ei_optimizers[i].state_dict(),
+                'event_buffer_index': self.P_ei_buffer[i].get_index(),
+                'end_net': self.P_end_networks[i].state_dict(),
+                'end_opt': self.P_end_optimizers[i].state_dict(),
+                'end_buffer_index': self.P_end_buffer[i].get_index(),
+            }, dir_name_i)
+
+            self.P_start_buffer[i].save(buffer_dir, 'start_' + str(i))
+            self.P_ei_buffer[i].save(buffer_dir, 'event_' + str(i))
+            self.P_end_buffer[i].save(buffer_dir, 'end_' + str(i))
+
+    def load(self, directory, epoch=-1):
+        """
+        Load the whole system
+        :param directory: target directory to load from
+        :param epoch: number of epoch to be loaded
+        """
+        dir_name = directory + '/checkpoint_' + str(epoch) + '/'
+        buffer_dir = dir_name + 'buffers/'
+        for i in range(self.num_models):
+            dir_name_i = dir_name + 'net_' + str(i)
+            checkpoint = torch.load(dir_name_i)
+            self.P_start_networks[i].load_state_dict(checkpoint['start_net'])
+            self.P_start_optimizers[i].load_state_dict(checkpoint['start_opt'])
+            self.P_ei_networks[i].load_state_dict(checkpoint['event_net'])
+            self.P_ei_optimizers[i].load_state_dict(checkpoint['event_opt'])
+            self.P_end_networks[i].load_state_dict(checkpoint['end_net'])
+            self.P_end_optimizers[i].load_state_dict(checkpoint['end_opt'])
+
+            self.P_start_buffer[i].load(buffer_dir, 'start_' + str(i), index=checkpoint['start_buffer_index'])
+            self.P_ei_buffer[i].load(buffer_dir, 'event_' + str(i), index=checkpoint['event_buffer_index'])
+            self.P_end_buffer[i].load(buffer_dir, 'end_' + str(i), index=checkpoint['end_buffer_index']
 
     # ------------- OFFLINE DATA COLLECTION  -------------
     def get_offline_data(self, o_t, pi_t, e_i, done):

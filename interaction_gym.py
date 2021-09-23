@@ -7,10 +7,8 @@ future versions might enable the usage of this scenario for RL-based algorithms.
 
 """
 
-import math
 import gym
 from gym import spaces, logger
-from gym.utils import seeding
 import interaction_gym_rendering as rendering
 import numpy as np
 import pyglet

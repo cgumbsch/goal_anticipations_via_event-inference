@@ -5,9 +5,6 @@ producing a Gaussian distribution
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy
-from torch.autograd import Variable
-import math
 import torch.optim as optim
 
 
@@ -21,6 +18,8 @@ def weights_init(m):
 
 
 class Multivariate_Gaussian_Network(nn.Module):
+
+    min_p = 1e-11
     
     def __init__(self, input_dim, output_dim):
         """
@@ -33,6 +32,8 @@ class Multivariate_Gaussian_Network(nn.Module):
         weights_init(self.fcMu)
         self.fcSigma = nn.Linear(input_dim, output_dim)
         weights_init(self.fcSigma)
+        self.gauss_loss_func = torch.nn.GaussianNLLLoss()
+
 
     def forward(self, x):
         """
@@ -43,7 +44,7 @@ class Multivariate_Gaussian_Network(nn.Module):
         mu = self.fcMu(x)
         # Sigma determined with ELUs + 1 + p to ensure values > 0
         # small p > 0 avoids that Sigma == 0
-        sigma = F.elu(self.fcSigma(x)) + 1.00000000001
+        sigma = F.elu(self.fcSigma(x)) + 1 + self.min_p
         return mu, sigma
 
     def get_optimizer(self, learning_rate, momentum_term=0.0, type='SGD'):
@@ -57,9 +58,33 @@ class Multivariate_Gaussian_Network(nn.Module):
             return optim.Adam(self.parameters(), lr=learning_rate, eps=1e-04)
         return optim.SGD(self.parameters(), lr=learning_rate, momentum=momentum_term)
 
-    def batch_loss_criterion(self, output, label):
+    def loss_criterion(self, output, label, tanh=False):
         """
-        Loss function applied for batched outputs
+        Loss function, i.e., negative log likelihood
+        :param output: output (mu, Sigma) of the network
+        :param label: nominal output
+        :param tanh: process likelihood by tanh
+        :return: negative log likelihood of nominal label under output distribution
+        """
+        if tanh:
+            return self._loss_criterion_tanh(output, label)
+        return self.gauss_loss_func(input=output[0].unsqueeze(0), target=label.unsqueeze(0), var=output[1].unsqueeze(0))
+
+    def batch_loss_criterion(self, output, label, tanh=False):
+        """
+        Loss function, i.e., negative log likelihood  for batched outputs
+        :param output: output (mu, Sigma) of the network , each is a batch
+        :param label: batch of target output
+        :param tanh: process likelihood by tanh
+        :return: negative log likelihood of nominal label under output distribution
+        """
+        if tanh:
+            return self._batch_loss_criterion_tanh(output, label)
+        return self.gauss_loss_func(input=output[0], target=label, var=output[1])
+
+    def _batch_loss_criterion_tanh(self, output, label):
+        """
+        Loss function applied for batched outputs squeezed by tanh
         :param output: output (mu, Sigma) of the network, each is a batch
         :param label: batch of target outputs
         :return: negative log likelihood of nominal label under output distribution
@@ -69,9 +94,9 @@ class Multivariate_Gaussian_Network(nn.Module):
         distr = torch.distributions.MultivariateNormal(mu, sigma)
         return torch.mean(torch.tanh(-1 * distr.log_prob(label) * (1.0 / 100)) * 100)
 
-    def loss_criterion(self, output, label):
+    def _loss_criterion_tanh(self, output, label):
         """
-        Loss function, i.e., negative log likelihood
+        Loss function, i.e., negative log likelihood squeezed by tanh
         :param output: output (mu, Sigma) of the network
         :param label: nominal output
         :return: negative log likelihood of nominal label under output distribution
@@ -81,4 +106,4 @@ class Multivariate_Gaussian_Network(nn.Module):
         distr = torch.distributions.MultivariateNormal(mu, sigma)
         # negative log likelihood is squashed by tanh * 100 to avoid loss > 100
         # multiplied by constant factor c = 100
-        return torch.tanh( -1 * distr.log_prob(label) *(1.0/100)) * 100
+        return torch.tanh(-1 * distr.log_prob(label)*(1.0/100)) * 100
