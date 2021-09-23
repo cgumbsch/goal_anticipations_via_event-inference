@@ -2,7 +2,7 @@ import interaction_gym
 import numpy as np
 import event_inference as event
 import random
-
+import os
 
 def test_run(directory_name, setting_name, event_system, interaction_env,
              claw, simulation_num, epoch_num, run_num, time_horizon,
@@ -69,6 +69,9 @@ for simulation in range(10):
     env = interaction_gym.InteractionEventGym(sensory_noise_base=1.0, sensory_noise_focus=0.01,
                                               r_seed=seed, randomize_colors=random_Colors,
                                               percentage_reaching=percentage_reaching)
+    log_file_name = folder_name + '/' + test_name + str(simulation) + '/log_files/'
+    os.makedirs(log_file_name, exist_ok=True)
+
     for epoch in range(30):
         # TRAINING PHASE:
         # do 100 training event sequences per phase
@@ -89,13 +92,14 @@ for simulation in range(10):
         # do 10 test phases for hand and claw agents
         for run in range(10):
             # hand:
-            test_run(directory_name=folder_name, setting_name=test_name, event_system=model,
+            test_run(directory_name=log_file_name, setting_name=test_name, event_system=model,
                      interaction_env=env, claw=False, simulation_num=simulation,
                      epoch_num=epoch, run_num=run, time_horizon=tau)
             # claw:
-            test_run(directory_name=folder_name, setting_name=test_name, event_system=model,
+            test_run(directory_name=log_file_name, setting_name=test_name, event_system=model,
                      interaction_env=env, claw=True, simulation_num=simulation,
                      epoch_num=epoch, run_num=run, time_horizon=tau)
+        model.save(folder_name + '/' + test_name + str(simulation), epoch)
 
 # tau = 2, 20% E_grasp events in training, randomized agent appearance
 percentage_reaching = 0.2
@@ -109,6 +113,8 @@ for simulation in range(10):
     env = interaction_gym.InteractionEventGym(sensory_noise_base=1.0, sensory_noise_focus=0.01,
                                               r_seed=seed, randomize_colors=random_Colors,
                                               percentage_reaching=percentage_reaching)
+    log_file_name = folder_name + '/' + test_name + str(simulation) + '/log_files/'
+    os.makedirs(log_file_name, exist_ok=True)
     for epoch in range(30):
         # TRAINING PHASE:
         # do 100 training event sequences per phase
@@ -129,13 +135,14 @@ for simulation in range(10):
         # do 10 test phases for hand and claw agents
         for run in range(10):
             # hand:
-            test_run(directory_name=folder_name, setting_name=test_name, event_system=model,
+            test_run(directory_name=log_file_name, setting_name=test_name, event_system=model,
                      interaction_env=env, claw=False, simulation_num=simulation,
                      epoch_num=epoch, run_num=run, time_horizon=tau)
             # claw:
-            test_run(directory_name=folder_name, setting_name=test_name, event_system=model,
+            test_run(directory_name=log_file_name, setting_name=test_name, event_system=model,
                      interaction_env=env, claw=True, simulation_num=simulation,
                      epoch_num=epoch, run_num=run, time_horizon=tau)
+        model.save(folder_name + '/' + test_name + str(simulation), epoch)
 
 # tau = 2, 10% E_grasp events in training, randomized agent appearance
 percentage_reaching = 0.1
@@ -149,6 +156,8 @@ for simulation in range(10):
     env = interaction_gym.InteractionEventGym(sensory_noise_base=1.0, sensory_noise_focus=0.01,
                                               r_seed=seed, randomize_colors=random_Colors,
                                               percentage_reaching=percentage_reaching)
+    log_file_name = folder_name + '/' + test_name + str(simulation) + '/log_files/'
+    os.makedirs(log_file_name, exist_ok=True)
     for epoch in range(30):
         # TRAINING PHASE:
         # do 100 training event sequences per phase
@@ -169,13 +178,14 @@ for simulation in range(10):
         # do 10 test phases for hand and claw agents
         for run in range(10):
             # hand:
-            test_run(directory_name=folder_name, setting_name=test_name, event_system=model,
+            test_run(directory_name=log_file_name, setting_name=test_name, event_system=model,
                      interaction_env=env, claw=False, simulation_num=simulation,
                      epoch_num=epoch, run_num=run, time_horizon=tau)
             # claw:
-            test_run(directory_name=folder_name, setting_name=test_name, event_system=model,
+            test_run(directory_name=log_file_name, setting_name=test_name, event_system=model,
                      interaction_env=env, claw=True, simulation_num=simulation,
                      epoch_num=epoch, run_num=run, time_horizon=tau)
+        model.save(folder_name + '/' + test_name + str(simulation), epoch)
 
 # tau = 2, 1% E_grasp events in training, randomized agent appearance
 percentage_reaching = 0.01
@@ -189,6 +199,8 @@ for simulation in range(10):
     env = interaction_gym.InteractionEventGym(sensory_noise_base=1.0, sensory_noise_focus=0.01,
                                               r_seed=seed, randomize_colors=random_Colors,
                                               percentage_reaching=percentage_reaching)
+    log_file_name = folder_name + '/' + test_name + str(simulation) + '/log_files/'
+    os.makedirs(log_file_name, exist_ok=True)
     for epoch in range(30):
         # TRAINING PHASE:
         # do 100 training event sequences per phase
@@ -209,13 +221,14 @@ for simulation in range(10):
         # do 10 test phases for hand and claw agents
         for run in range(10):
             # hand:
-            test_run(directory_name=folder_name, setting_name=test_name, event_system=model,
+            test_run(directory_name=log_file_name, setting_name=test_name, event_system=model,
                      interaction_env=env, claw=False, simulation_num=simulation,
                      epoch_num=epoch, run_num=run, time_horizon=tau)
             # claw:
-            test_run(directory_name=folder_name, setting_name=test_name, event_system=model,
+            test_run(directory_name=log_file_name, setting_name=test_name, event_system=model,
                      interaction_env=env, claw=True, simulation_num=simulation,
                      epoch_num=epoch, run_num=run, time_horizon=tau)
+        model.save(folder_name + '/' + test_name + str(simulation), epoch)
 
 # tau = 2, 0.1% E_grasp events in training, randomized agent appearance
 percentage_reaching = 0.001
@@ -229,6 +242,8 @@ for simulation in range(10):
     env = interaction_gym.InteractionEventGym(sensory_noise_base=1.0, sensory_noise_focus=0.01,
                                               r_seed=seed, randomize_colors=random_Colors,
                                               percentage_reaching=percentage_reaching)
+    log_file_name = folder_name + '/' + test_name + str(simulation) + '/log_files/'
+    os.makedirs(log_file_name, exist_ok=True)
     for epoch in range(30):
         # TRAINING PHASE:
         # do 100 training event sequences per phase
@@ -249,10 +264,11 @@ for simulation in range(10):
         # do 10 test phases for hand and claw agents
         for run in range(10):
             # hand:
-            test_run(directory_name=folder_name, setting_name=test_name, event_system=model,
+            test_run(directory_name=log_file_name, setting_name=test_name, event_system=model,
                      interaction_env=env, claw=False, simulation_num=simulation,
                      epoch_num=epoch, run_num=run, time_horizon=tau)
             # claw:
-            test_run(directory_name=folder_name, setting_name=test_name, event_system=model,
+            test_run(directory_name=log_file_name, setting_name=test_name, event_system=model,
                      interaction_env=env, claw=True, simulation_num=simulation,
                      epoch_num=epoch, run_num=run, time_horizon=tau)
+        model.save(folder_name + '/' + test_name + str(simulation), epoch)

@@ -64,9 +64,9 @@ test_name = 'res_tau_2_sim'
 
 for simulation in range(20):
     seed = simulation
-    model = event.EventInferenceSystem(epsilon_start=epsilon_start, epsilon_dynamics=epsilon_dynamics,
-                                       epsilon_end=epsilon_end, no_transition_prior=0.9, dim_observation=18,
-                                       num_policies=3, num_models=4, r_seed=seed, sampling_rate=2)
+    model = event.CAPRI(epsilon_start=epsilon_start, epsilon_dynamics=epsilon_dynamics,
+                        epsilon_end=epsilon_end, no_transition_prior=0.9, dim_observation=18,
+                        num_policies=3, num_models=4, r_seed=seed, sampling_rate=2)
     env = interaction_gym.InteractionEventGym(sensory_noise_base=1.0, sensory_noise_focus=0.01,
                                               r_seed=seed, randomize_colors=random_Colors,
                                               percentage_reaching=percentage_reaching)
@@ -125,9 +125,9 @@ tau = 1
 test_name = 'res_tau_1_sim'
 for simulation in range(20):
     seed = simulation
-    model = event.EventInferenceSystem(epsilon_start=epsilon_start, epsilon_dynamics=epsilon_dynamics,
-                                       epsilon_end=epsilon_end, no_transition_prior=0.9, dim_observation=18,
-                                       num_policies=3, num_models=4, r_seed=seed, sampling_rate=2)
+    model = event.CAPRI(epsilon_start=epsilon_start, epsilon_dynamics=epsilon_dynamics,
+                        epsilon_end=epsilon_end, no_transition_prior=0.9, dim_observation=18,
+                        num_policies=3, num_models=4, r_seed=seed, sampling_rate=2)
     env = interaction_gym.InteractionEventGym(sensory_noise_base=1.0, sensory_noise_focus=0.01,
                                               r_seed=seed, randomize_colors=random_Colors,
                                               percentage_reaching=percentage_reaching)
@@ -168,9 +168,9 @@ tau = 3
 test_name = 'res_tau_3_sim'
 for simulation in range(20):
     seed = simulation
-    model = event.EventInferenceSystem(epsilon_start=epsilon_start, epsilon_dynamics=epsilon_dynamics,
-                                       epsilon_end=epsilon_end, no_transition_prior=0.9, dim_observation=18,
-                                       num_policies=3, num_models=4, r_seed=seed, sampling_rate=2)
+    model = event.CAPRI(epsilon_start=epsilon_start, epsilon_dynamics=epsilon_dynamics,
+                        epsilon_end=epsilon_end, no_transition_prior=0.9, dim_observation=18,
+                        num_policies=3, num_models=4, r_seed=seed, sampling_rate=2)
     env = interaction_gym.InteractionEventGym(sensory_noise_base=1.0, sensory_noise_focus=0.01,
                                               r_seed=seed, randomize_colors=random_Colors,
                                               percentage_reaching=percentage_reaching)
