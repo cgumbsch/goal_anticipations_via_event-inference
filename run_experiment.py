@@ -114,7 +114,7 @@ for simulation in range(20):
         for run in range(10):
             # hand:
             added_noise = np.random.normal(0.0, 1.0, 18) * noise_per_dimension
-            env.add_other_noise(added_noise)
+            env.set_other_noise(added_noise)
             test_run(directory_name=log_file_name, setting_name=test_name, event_system=model,
                      interaction_env=env, claw=False, simulation_num=simulation,
                      epoch_num=30, run_num=run, time_horizon=tau, file_name_addition=extra_file_name)
